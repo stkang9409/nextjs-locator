@@ -5,7 +5,7 @@
 Zero-config for Next.js 15/16 with Turbopack. No Babel plugin, no browser extension, no setup.
 
 <!-- TODO: Add demo GIF here -->
-<!-- ![Demo](./assets/demo.gif) -->
+https://github.com/user-attachments/assets/4aa73a8c-ff03-4017-8950-14b70417cea2
 
 ## Features
 
