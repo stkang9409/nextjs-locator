@@ -10,9 +10,12 @@ Zero-config for Next.js 15/16 with Turbopack. No Babel plugin, no browser extens
 ## Features
 
 - **Zero config** — Drop a single component into your layout, done
-- **React 19 ready** — Uses `_debugStack` (not the removed `_debugSource`)
+- **React 18 + 19** — Uses `_debugStack` (React 19) with `_debugSource` fallback (React 18)
 - **Turbopack native** — Decodes Turbopack's sectioned source map format
 - **Webpack compatible** — Also works with Next.js webpack builds
+- **File path tooltip** — Shows resolved source file path and line on hover
+- **Component hierarchy** — Right-click to see the full React component ancestry
+- **Source map prefetch** — Prefetches source maps on modifier key press for instant resolution
 - **Multi-editor** — VS Code, Cursor, WebStorm, Zed, VS Code Insiders
 - **Zero dependencies** — Only requires `react` as a peer dependency
 - **Production safe** — Tree-shaken completely from production builds
@@ -22,10 +25,11 @@ Zero-config for Next.js 15/16 with Turbopack. No Babel plugin, no browser extens
 
 1. Listens for **modifier key + mousemove** to find the DOM element under cursor
 2. Traverses the **React Fiber tree** via `__reactFiber$` internal key
-3. Reads **`_debugStack`** (React 19) to get the compiled chunk URL and position
-4. **Fetches the `.map` source map** file (supports Turbopack sections format)
+3. Reads **`_debugStack`** (React 19) or **`_debugSource`** (React 18) for source location
+4. **Prefetches `.map` source maps** when modifier key is pressed (Turbopack sections format)
 5. **Decodes VLQ mappings** to resolve the original file path, line, and column
-6. Opens `vscode://file/path:line:column` (or your editor's protocol)
+6. Displays **file path in tooltip** (async update after initial component name)
+7. Opens `vscode://file/path:line:column` (or your editor's protocol)
 
 ## Installation
 
@@ -74,9 +78,18 @@ export default function App({ Component, pageProps }: AppProps) {
 }
 ```
 
-### Usage
+## Keyboard Shortcuts
 
-Hold **Alt** (or **Option** on Mac) and hover over any element — you'll see a red highlight with the component name. **Click** to open the source file in your editor.
+| Shortcut | Action |
+|----------|--------|
+| **Alt + Hover** | Highlight component with name and source file path |
+| **Alt + Click** | Open component source in editor |
+| **Alt + Right-click** | Show component hierarchy menu |
+| **Arrow Up/Down** | Navigate hierarchy menu |
+| **Enter** | Open selected component source |
+| **Escape** | Dismiss hierarchy menu |
+
+> On Mac, use **Option** instead of Alt.
 
 ## Props
 
@@ -139,8 +152,12 @@ NEXT_PUBLIC_PROJECT_ROOT=/Users/you/projects/my-app
 | Feature | nextjs-locator | click-to-react-component | LocatorJS | react-dev-inspector |
 |---------|---------------|--------------------------|-----------|---------------------|
 | React 19 support | Yes | No | Partial | No |
+| React 18 support | Yes (_debugSource) | Yes | Yes | Yes |
 | Turbopack support | Yes | No | No | No |
-| Setup | Drop-in component | Babel plugin | Browser extension + Babel | Babel/SWC plugin |
+| Setup | Drop-in component | Babel plugin | Browser ext + Babel | Babel/SWC plugin |
+| File path tooltip | Yes | No | No | No |
+| Component hierarchy | Yes (right-click) | Yes | No | No |
+| Source map prefetch | Yes | N/A | N/A | N/A |
 | Dependencies | 0 | Small | Extension | Plugin |
 | Next.js App Router | Native | Needs config | Partial | Needs config |
 | Multi-editor | 5 editors | VS Code only | VS Code + others | VS Code + others |
@@ -155,7 +172,7 @@ NEXT_PUBLIC_PROJECT_ROOT=/Users/you/projects/my-app
 
 ### vs [click-to-react-component](https://github.com/ericclemmons/click-to-component)
 
-Requires `@babel/plugin-transform-react-jsx-source` which injects `_debugSource` into every JSX element at compile time. React 19 removed `_debugSource` in favor of `_debugStack`, breaking this approach. `nextjs-locator` reads `_debugStack` directly — no build plugin needed.
+Requires `@babel/plugin-transform-react-jsx-source` which injects `_debugSource` into every JSX element at compile time. React 19 removed `_debugSource` in favor of `_debugStack`, breaking this approach. `nextjs-locator` reads `_debugStack` natively and falls back to `_debugSource` for React 18 — no build plugin needed.
 
 ### vs [LocatorJS](https://www.locatorjs.com/)
 
@@ -163,7 +180,7 @@ Requires a browser extension or Babel plugin to inject `data-locator` attributes
 
 ### vs [react-dev-inspector](https://github.com/nicknisi/react-dev-inspector)
 
-Requires SWC/Babel plugin configuration. `nextjs-locator` achieves the same result with zero config by leveraging React's built-in debug information and runtime source map resolution.
+Requires SWC/Babel plugin configuration. `nextjs-locator` achieves the same result with zero config by leveraging React's built-in debug information and runtime source map resolution. Plus, it offers component hierarchy navigation and file path preview that others don't.
 
 ## TypeScript
 

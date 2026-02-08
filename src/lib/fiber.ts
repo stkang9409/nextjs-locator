@@ -1,4 +1,4 @@
-import type { StackFrame } from '../types';
+import type { StackFrame, ResolvedSource } from '../types';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -66,4 +66,73 @@ export function extractStackFrame(debugStack: any): StackFrame | null {
   }
 
   return null;
+}
+
+/**
+ * Extract source location from React 18's _debugSource.
+ * Returns a ResolvedSource directly — no source map fetch needed.
+ */
+export function extractDebugSource(fiber: any): ResolvedSource | null {
+  const source = fiber?._debugSource;
+  if (!source?.fileName) return null;
+
+  return {
+    filePath: source.fileName,
+    originalLine: source.lineNumber ?? 1,
+    originalColumn: source.columnNumber ?? 0,
+  };
+}
+
+/**
+ * Walk up the Fiber tree collecting ALL component ancestors.
+ * Returns array from innermost (closest to element) to outermost (root).
+ */
+export function collectComponentAncestry(
+  fiber: any,
+  maxDepth: number = 20,
+): Array<{ fiber: any; name: string }> {
+  const ancestors: Array<{ fiber: any; name: string }> = [];
+  let current = fiber;
+  let depth = 0;
+
+  while (current && depth < maxDepth) {
+    if (current.tag === 0 || current.tag === 1) {
+      const name = getComponentName(current);
+      if (name) {
+        ancestors.push({ fiber: current, name });
+      }
+    }
+    current = current.return;
+    depth++;
+  }
+
+  return ancestors;
+}
+
+/**
+ * Scan visible DOM elements to collect unique chunk URLs from React Fiber _debugStack.
+ * Used for prefetching source maps when the modifier key is pressed.
+ */
+export function collectVisibleChunkUrls(limit: number = 50): Set<string> {
+  const urls = new Set<string>();
+  const walker = document.createTreeWalker(
+    document.body,
+    NodeFilter.SHOW_ELEMENT,
+  );
+
+  let count = 0;
+  let node = walker.nextNode();
+  while (node && count < limit) {
+    const fiber = getFiberFromElement(node as HTMLElement);
+    if (fiber) {
+      const stackInfo = extractStackFrame(fiber._debugStack);
+      if (stackInfo && !urls.has(stackInfo.chunkUrl)) {
+        urls.add(stackInfo.chunkUrl);
+        count++;
+      }
+    }
+    node = walker.nextNode();
+  }
+
+  return urls;
 }

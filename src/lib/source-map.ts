@@ -2,6 +2,53 @@ import type { SourceMapSections, ResolvedSource } from '../types';
 import { decodeOriginalPosition } from './vlq';
 
 /**
+ * Prefetch a source map into the cache without resolving a specific position.
+ * Non-blocking, best-effort. Returns immediately if already cached.
+ */
+export async function prefetchSourceMap(
+  chunkUrl: string,
+  cache: Map<string, SourceMapSections>,
+): Promise<void> {
+  if (cache.has(chunkUrl)) return;
+
+  try {
+    const resp = await fetch(chunkUrl + '.map');
+    if (!resp.ok) return;
+    const sm = await resp.json();
+    if (sm.sections) {
+      cache.set(chunkUrl, sm.sections as SourceMapSections);
+    }
+  } catch {
+    // Silently fail — prefetch is best-effort
+  }
+}
+
+/**
+ * Convert an absolute file path to a relative one for display.
+ * Strips projectRoot prefix, or looks for common markers like src/, app/.
+ */
+export function toRelativePath(
+  absolutePath: string,
+  projectRoot?: string,
+): string {
+  const root =
+    projectRoot ?? process.env.NEXT_PUBLIC_PROJECT_ROOT ?? '';
+  if (root && absolutePath.startsWith(root)) {
+    const relative = absolutePath.slice(root.length);
+    return relative.startsWith('/') ? relative.slice(1) : relative;
+  }
+  // Try to find common directory markers
+  const markers = ['/src/', '/app/', '/pages/', '/components/'];
+  for (const marker of markers) {
+    const idx = absolutePath.indexOf(marker);
+    if (idx !== -1) return absolutePath.slice(idx + 1);
+  }
+  // Last resort: return last 3 path segments
+  const parts = absolutePath.split('/');
+  return parts.slice(-3).join('/');
+}
+
+/**
  * Fetch and cache source map, then resolve the original source position
  * for a given generated line and column.
  *

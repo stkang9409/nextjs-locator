@@ -60,6 +60,14 @@ export function hideOverlay(elements: OverlayElements): void {
   elements.tooltip.style.display = 'none';
 }
 
+/** Update tooltip text without repositioning */
+export function updateTooltipText(
+  elements: OverlayElements,
+  text: string,
+): void {
+  elements.tooltip.textContent = text;
+}
+
 /** Remove overlay elements from DOM */
 export function removeOverlay(elements: OverlayElements): void {
   elements.overlay.remove();

@@ -51,3 +51,19 @@ export interface OriginalPosition {
   originalLine: number;
   originalColumn: number;
 }
+
+/** React 18 _debugSource object on Fiber nodes */
+export interface DebugSource {
+  fileName: string;
+  lineNumber?: number;
+  columnNumber?: number;
+}
+
+/** Context menu item representing a component in the ancestor chain */
+export interface ContextMenuItem {
+  componentName: string;
+  filePath?: string;
+  line?: number;
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  fiber: any;
+}
