@@ -1,6 +1,6 @@
 {
   "name": "nextjs-locator",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Alt+Click any React component to open its source in VS Code. Zero-config for Next.js with Turbopack.",
   "keywords": [
     "react",

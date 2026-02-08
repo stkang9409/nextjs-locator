@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0 (2026-02-08)
+
+### Features
+
+- **Props/State preview panel** — Hover shows component props, hook state (useState, useReducer, useMemo, useRef), and render count in a floating panel
+- **Safe value serialization** — Handles circular refs, React elements, functions, symbols, and deeply nested objects
+- **Class component support** — Displays `stateNode.state` for class components (fiber.tag === 1)
+- **`showPreview` prop** — New prop to enable/disable the preview panel (default: true)
+- **`data-locator-source` fast path** — Detects compile-time injected source attributes for instant resolution
+- **`nextjs-locator-swc` companion** — Optional Babel plugin that injects `data-locator-source` attributes at build time
+
 ## 0.2.0 (2025-02-08)
 
 ### Features

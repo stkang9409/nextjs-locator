@@ -14,21 +14,26 @@ Zero-config for Next.js 15/16 with Turbopack. No Babel plugin, no browser extens
 - **Turbopack native** — Decodes Turbopack's sectioned source map format
 - **Webpack compatible** — Also works with Next.js webpack builds
 - **File path tooltip** — Shows resolved source file path and line on hover
+- **Props/State preview** — Hover shows component props, hook state, and render count
 - **Component hierarchy** — Right-click to see the full React component ancestry
 - **Source map prefetch** — Prefetches source maps on modifier key press for instant resolution
+- **Compile-time fast path** — Optional `nextjs-locator-swc` companion for instant resolution via build-time attributes
 - **Multi-editor** — VS Code, Cursor, WebStorm, Zed, VS Code Insiders
 - **Zero dependencies** — Only requires `react` as a peer dependency
 - **Production safe** — Tree-shaken completely from production builds
-- **Configurable** — Modifier key, highlight color, editor choice via props
+- **Configurable** — Modifier key, highlight color, editor choice, preview toggle via props
 
 ## How It Works
 
 1. Listens for **modifier key + mousemove** to find the DOM element under cursor
 2. Traverses the **React Fiber tree** via `__reactFiber$` internal key
-3. Reads **`_debugStack`** (React 19) or **`_debugSource`** (React 18) for source location
+3. Source resolution priority:
+   - **`data-locator-source`** attribute (instant, if `nextjs-locator-swc` is used)
+   - **`_debugSource`** (React 18, synchronous)
+   - **`_debugStack`** + source map (React 19, async with prefetch)
 4. **Prefetches `.map` source maps** when modifier key is pressed (Turbopack sections format)
 5. **Decodes VLQ mappings** to resolve the original file path, line, and column
-6. Displays **file path in tooltip** (async update after initial component name)
+6. Displays **file path in tooltip** and **props/state preview panel**
 7. Opens `vscode://file/path:line:column` (or your editor's protocol)
 
 ## Installation
@@ -100,6 +105,7 @@ export default function App({ Component, pageProps }: AppProps) {
 | `highlightColor` | `string` | `'#ef4444'` | CSS color for the overlay border |
 | `projectRoot` | `string` | — | Absolute project root path |
 | `enabled` | `boolean` | `true` in dev | Force enable/disable |
+| `showPreview` | `boolean` | `true` | Show props/state preview panel on hover |
 
 ### Editor Support
 
@@ -156,8 +162,10 @@ NEXT_PUBLIC_PROJECT_ROOT=/Users/you/projects/my-app
 | Turbopack support | Yes | No | No | No |
 | Setup | Drop-in component | Babel plugin | Browser ext + Babel | Babel/SWC plugin |
 | File path tooltip | Yes | No | No | No |
+| Props/State preview | Yes | No | No | No |
 | Component hierarchy | Yes (right-click) | Yes | No | No |
 | Source map prefetch | Yes | N/A | N/A | N/A |
+| Compile-time fast path | Yes (optional) | N/A | N/A | N/A |
 | Dependencies | 0 | Small | Extension | Plugin |
 | Next.js App Router | Native | Needs config | Partial | Needs config |
 | Multi-editor | 5 editors | VS Code only | VS Code + others | VS Code + others |
@@ -182,12 +190,40 @@ Requires a browser extension or Babel plugin to inject `data-locator` attributes
 
 Requires SWC/Babel plugin configuration. `nextjs-locator` achieves the same result with zero config by leveraging React's built-in debug information and runtime source map resolution. Plus, it offers component hierarchy navigation and file path preview that others don't.
 
+## Props/State Preview
+
+When hovering a component with the modifier key held, a preview panel appears showing:
+- **Props** — Current prop values (max 10, excluding `children`)
+- **Hook state** — `useState`, `useReducer`, `useMemo`, `useRef` values
+- **Render count** — How many times the component has been inspected
+
+Disable with:
+```tsx
+<Locator showPreview={false} />
+```
+
+## Compile-Time Source Resolution (Optional)
+
+For instant source resolution without runtime source map fetching, install the companion package:
+
+```bash
+npm install nextjs-locator-swc
+```
+
+```js
+// next.config.js
+const { withLocator } = require('nextjs-locator-swc');
+module.exports = withLocator({ /* your config */ });
+```
+
+This injects `data-locator-source` attributes at build time, which `nextjs-locator` reads directly for zero-latency clicks. See [nextjs-locator-swc](https://github.com/stkang9409/nextjs-locator-swc) for details.
+
 ## TypeScript
 
 Full TypeScript support with exported types:
 
 ```typescript
-import type { LocatorProps, EditorProtocol } from 'nextjs-locator';
+import type { LocatorProps, EditorProtocol, FiberInspection } from 'nextjs-locator';
 ```
 
 ## License

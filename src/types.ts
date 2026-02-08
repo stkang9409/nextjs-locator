@@ -17,6 +17,8 @@ export interface LocatorProps {
   enabled?: boolean;
   /** Overlay border color (CSS color). Default: '#ef4444' (red) */
   highlightColor?: string;
+  /** Show props/state preview panel on Alt+hover. Default: true */
+  showPreview?: boolean;
 }
 
 /** Parsed stack frame from React _debugStack */
@@ -66,4 +68,43 @@ export interface ContextMenuItem {
   line?: number;
   /* eslint-disable @typescript-eslint/no-explicit-any */
   fiber: any;
+}
+
+/** Serialized value for safe display in preview panel */
+export interface SerializedValue {
+  display: string;
+  type:
+    | 'string'
+    | 'number'
+    | 'boolean'
+    | 'null'
+    | 'undefined'
+    | 'object'
+    | 'array'
+    | 'function'
+    | 'element'
+    | 'symbol'
+    | 'other';
+}
+
+/** A single prop entry for display */
+export interface PropEntry {
+  key: string;
+  value: SerializedValue;
+}
+
+/** A single hook state entry for display */
+export interface HookEntry {
+  index: number;
+  hookType: string;
+  value: SerializedValue;
+}
+
+/** Complete fiber inspection result */
+export interface FiberInspection {
+  props: PropEntry[];
+  hooks: HookEntry[];
+  renderCount: number;
+  isClassComponent: boolean;
+  classState: PropEntry[] | null;
 }

@@ -13,6 +13,7 @@ import {
   getComponentName,
   extractStackFrame,
   extractDebugSource,
+  extractDataLocatorSource,
   collectComponentAncestry,
   collectVisibleChunkUrls,
 } from './lib/fiber';
@@ -37,6 +38,13 @@ import {
   removeContextMenu,
   isContextMenuVisible,
 } from './lib/context-menu';
+import { inspectFiber } from './lib/fiber-inspect';
+import {
+  createPreviewPanel,
+  showPreviewPanel,
+  hidePreviewPanel,
+  removePreviewPanel,
+} from './lib/preview-panel';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -49,14 +57,20 @@ const MODIFIER_KEYS: Record<string, string> = {
 
 /**
  * Resolve the original source location for a component Fiber node.
- * Tries React 18 _debugSource first (sync), falls back to React 19
- * _debugStack + source map resolution (async).
+ * Priority: data-locator-source attribute → React 18 _debugSource → React 19 _debugStack + source map.
  */
 async function resolveComponentSource(
   fiber: any,
   cache: Map<string, SourceMapSections>,
   _projectRoot?: string,
+  element?: HTMLElement,
 ): Promise<ResolvedSource | null> {
+  // Fastest path: compile-time injected data-locator-source attribute
+  if (element) {
+    const attrSource = extractDataLocatorSource(element);
+    if (attrSource) return attrSource;
+  }
+
   // Fast path: React 18 _debugSource (synchronous, no fetch needed)
   const debugSource = extractDebugSource(fiber);
   if (debugSource) return debugSource;
@@ -98,6 +112,7 @@ export function Locator({
   modifier = 'alt',
   enabled,
   highlightColor = '#ef4444',
+  showPreview = true,
 }: LocatorProps = {}) {
   const isEnabled = enabled ?? process.env.NODE_ENV === 'development';
 
@@ -107,10 +122,12 @@ export function Locator({
     const sourceMapCache = new Map<string, SourceMapSections>();
     const elements = createOverlay(highlightColor);
     const contextMenu = createContextMenu();
+    const previewPanel = showPreview ? createPreviewPanel() : null;
     const modifierKey = MODIFIER_KEYS[modifier] ?? 'Alt';
 
     let isModifierHeld = false;
     let currentHoverTarget: HTMLElement | null = null;
+    let inspectDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === modifierKey) {
@@ -130,6 +147,8 @@ export function Locator({
         isModifierHeld = false;
         hideOverlay(elements);
         hideContextMenu(contextMenu);
+        if (previewPanel) hidePreviewPanel(previewPanel);
+        if (inspectDebounceTimer) clearTimeout(inspectDebounceTimer);
         document.body.style.cursor = '';
       }
     };
@@ -162,7 +181,7 @@ export function Locator({
       if (name && componentFiber) {
         currentHoverTarget = target;
 
-        resolveComponentSource(componentFiber, sourceMapCache, projectRoot)
+        resolveComponentSource(componentFiber, sourceMapCache, projectRoot, target)
           .then((resolved) => {
             if (currentHoverTarget !== target) return; // stale
             if (resolved) {
@@ -179,6 +198,20 @@ export function Locator({
           .catch(() => {
             /* keep showing name only */
           });
+
+        // Debounced preview panel: inspect fiber props/state
+        if (previewPanel) {
+          if (inspectDebounceTimer) clearTimeout(inspectDebounceTimer);
+          inspectDebounceTimer = setTimeout(() => {
+            if (currentHoverTarget !== target) return; // stale
+            const inspection = inspectFiber(componentFiber);
+            const targetRect = target.getBoundingClientRect();
+            const tooltipRect = elements.tooltip.getBoundingClientRect();
+            showPreviewPanel(previewPanel, targetRect, tooltipRect, inspection);
+          }, 150);
+        }
+      } else if (previewPanel) {
+        hidePreviewPanel(previewPanel);
       }
     };
 
@@ -215,6 +248,7 @@ export function Locator({
         fiber,
         sourceMapCache,
         projectRoot,
+        target,
       );
       if (!resolved) {
         const componentFiber = findNearestComponentFiber(fiber);
@@ -223,6 +257,7 @@ export function Locator({
             componentFiber,
             sourceMapCache,
             projectRoot,
+            target,
           );
         }
       }
@@ -245,6 +280,7 @@ export function Locator({
 
       e.preventDefault();
       e.stopPropagation();
+      if (previewPanel) hidePreviewPanel(previewPanel);
 
       const target = document.elementFromPoint(
         e.clientX,
@@ -302,6 +338,8 @@ export function Locator({
       isModifierHeld = false;
       hideOverlay(elements);
       hideContextMenu(contextMenu);
+      if (previewPanel) hidePreviewPanel(previewPanel);
+      if (inspectDebounceTimer) clearTimeout(inspectDebounceTimer);
       document.body.style.cursor = '';
     };
 
@@ -322,9 +360,11 @@ export function Locator({
       window.removeEventListener('blur', handleBlur);
       removeOverlay(elements);
       removeContextMenu(contextMenu);
+      if (previewPanel) removePreviewPanel(previewPanel);
+      if (inspectDebounceTimer) clearTimeout(inspectDebounceTimer);
       document.body.style.cursor = '';
     };
-  }, [isEnabled, editor, projectRoot, modifier, highlightColor]);
+  }, [isEnabled, editor, projectRoot, modifier, highlightColor, showPreview]);
 
   return null;
 }

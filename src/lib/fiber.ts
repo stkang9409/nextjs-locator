@@ -1,5 +1,35 @@
 import type { StackFrame, ResolvedSource } from '../types';
 
+/**
+ * Check if the target element or ancestors (up to 3 levels) have a
+ * data-locator-source attribute injected at compile time.
+ * Returns parsed ResolvedSource or null.
+ */
+export function extractDataLocatorSource(
+  element: HTMLElement,
+): ResolvedSource | null {
+  let current: HTMLElement | null = element;
+  let depth = 0;
+  while (current && depth < 3) {
+    const attr = current.getAttribute('data-locator-source');
+    if (attr) {
+      // Format: "filepath:line:col" — parse from end to handle Windows colons
+      const parts = attr.split(':');
+      if (parts.length >= 3) {
+        const col = parseInt(parts[parts.length - 1], 10);
+        const line = parseInt(parts[parts.length - 2], 10);
+        const filePath = parts.slice(0, -2).join(':');
+        if (filePath && !isNaN(line) && !isNaN(col)) {
+          return { filePath, originalLine: line, originalColumn: col };
+        }
+      }
+    }
+    current = current.parentElement;
+    depth++;
+  }
+  return null;
+}
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 /** Extract React Fiber instance from a DOM element via __reactFiber$ key */
