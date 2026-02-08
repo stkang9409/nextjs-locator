@@ -14,15 +14,15 @@
     "react-devtools",
     "cursor"
   ],
-  "author": "gangmingyu",
+  "author": "stkang9409",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/gangmingyu/nextjs-locator"
+    "url": "https://github.com/stkang9409/nextjs-locator"
   },
-  "homepage": "https://github.com/gangmingyu/nextjs-locator#readme",
+  "homepage": "https://github.com/stkang9409/nextjs-locator#readme",
   "bugs": {
-    "url": "https://github.com/gangmingyu/nextjs-locator/issues"
+    "url": "https://github.com/stkang9409/nextjs-locator/issues"
   },
   "type": "module",
   "main": "./dist/index.cjs",
