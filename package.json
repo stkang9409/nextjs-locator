@@ -1,0 +1,64 @@
+{
+  "name": "nextjs-locator",
+  "version": "0.1.0",
+  "description": "Alt+Click any React component to open its source in VS Code. Zero-config for Next.js with Turbopack.",
+  "keywords": [
+    "react",
+    "nextjs",
+    "developer-tools",
+    "source-locator",
+    "vscode",
+    "devtools",
+    "click-to-component",
+    "turbopack",
+    "react-devtools",
+    "cursor"
+  ],
+  "author": "gangmingyu",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gangmingyu/nextjs-locator"
+  },
+  "homepage": "https://github.com/gangmingyu/nextjs-locator#readme",
+  "bugs": {
+    "url": "https://github.com/gangmingyu/nextjs-locator/issues"
+  },
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build",
+    "clean": "rm -rf dist"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.2",
+    "@types/react": "^19.0.0",
+    "react": "^19.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0"
+  }
+}
