@@ -216,11 +216,14 @@ export function Locator({
     };
 
     const handleClick = async (e: MouseEvent) => {
-      // If context menu is open, dismiss it
+      // If context menu is open, handle clicks
       if (isContextMenuVisible(contextMenu)) {
-        if (!contextMenu.container.contains(e.target as Node)) {
-          hideContextMenu(contextMenu);
+        if (contextMenu.container.contains(e.target as Node)) {
+          // Inside menu click → let row click handler process it
+          return;
         }
+        // Outside menu click → dismiss menu
+        hideContextMenu(contextMenu);
         e.preventDefault();
         e.stopPropagation();
         return;
