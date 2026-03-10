@@ -19,6 +19,18 @@ export interface LocatorProps {
   highlightColor?: string;
   /** Show props/state preview panel on Alt+hover. Default: true */
   showPreview?: boolean;
+  /** API endpoint for saving DOM screenshots. If provided, enables screenshot capture in Claude prompt. */
+  screenshotEndpoint?: string;
+}
+
+/** Context passed to the "Ask Claude" workflow */
+export interface AskContext {
+  componentName: string;
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  fiber: any;
+  element: HTMLElement;
+  filePath?: string;
+  line?: number;
 }
 
 /** Parsed stack frame from React _debugStack */

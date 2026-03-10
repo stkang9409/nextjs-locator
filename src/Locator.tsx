@@ -45,6 +45,14 @@ import {
   hidePreviewPanel,
   removePreviewPanel,
 } from './lib/preview-panel';
+import {
+  createAskModal,
+  showAskModal,
+  hideAskModal,
+  removeAskModal,
+  isAskModalVisible,
+} from './lib/ask-modal';
+import { runAskClaude } from './lib/claude-prompt';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -99,7 +107,9 @@ async function resolveComponentSource(
  * Features:
  * - Alt+Hover: highlights component with name and source file path
  * - Alt+Click: opens source in editor
- * - Alt+Right-click: shows component hierarchy menu
+ * - Alt+Right-click: shows component hierarchy menu with two actions:
+ *     - "↗ 코드": opens source in editor
+ *     - "◎ Claude": opens Claude Code with rich component context prompt
  * - Source map prefetching on modifier key press
  * - React 18 _debugSource fallback
  *
@@ -113,6 +123,7 @@ export function Locator({
   enabled,
   highlightColor = '#ef4444',
   showPreview = true,
+  screenshotEndpoint,
 }: LocatorProps = {}) {
   const isEnabled = enabled ?? process.env.NODE_ENV === 'development';
 
@@ -123,6 +134,7 @@ export function Locator({
     const elements = createOverlay(highlightColor);
     const contextMenu = createContextMenu();
     const previewPanel = showPreview ? createPreviewPanel() : null;
+    const askModal = createAskModal();
     const modifierKey = MODIFIER_KEYS[modifier] ?? 'Alt';
 
     let isModifierHeld = false;
@@ -155,6 +167,8 @@ export function Locator({
 
     const handleMouseMove = (e: MouseEvent) => {
       if (!isModifierHeld) return;
+      // Don't interfere while modal is open
+      if (isAskModalVisible(askModal)) return;
       // Don't move overlay while context menu is open
       if (isContextMenuVisible(contextMenu)) return;
 
@@ -216,6 +230,16 @@ export function Locator({
     };
 
     const handleClick = async (e: MouseEvent) => {
+      // If modal is open, let its own event handlers work; dismiss on outside click
+      if (isAskModalVisible(askModal)) {
+        if (!askModal.overlay.contains(e.target as Node)) {
+          hideAskModal(askModal);
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        return;
+      }
+
       // If context menu is open, handle clicks
       if (isContextMenuVisible(contextMenu)) {
         if (contextMenu.container.contains(e.target as Node)) {
@@ -303,25 +327,73 @@ export function Locator({
         fiber: f,
       }));
 
+      // Capture target for "Ask Claude" closures
+      const capturedTarget = target;
+
       // Show menu with names immediately
-      showContextMenu(contextMenu, e.clientX, e.clientY, items, (item) => {
-        // On select: resolve source and open editor
-        resolveComponentSource(item.fiber, sourceMapCache, projectRoot)
-          .then((resolved) => {
-            if (resolved) {
-              const url = buildEditorUrl(
-                editor,
-                resolved.filePath,
-                resolved.originalLine,
-                resolved.originalColumn,
-              );
-              window.open(url, '_self');
-            }
-          })
-          .catch((err) =>
-            console.warn('[nextjs-locator] Source map error:', err),
-          );
-      });
+      showContextMenu(
+        contextMenu,
+        e.clientX,
+        e.clientY,
+        items,
+        // onGoToCode
+        (item) => {
+          resolveComponentSource(item.fiber, sourceMapCache, projectRoot)
+            .then((resolved) => {
+              if (resolved) {
+                const url = buildEditorUrl(
+                  editor,
+                  resolved.filePath,
+                  resolved.originalLine,
+                  resolved.originalColumn,
+                );
+                window.open(url, '_self');
+              }
+            })
+            .catch((err) =>
+              console.warn('[nextjs-locator] Source map error:', err),
+            );
+        },
+        // onAskClaude
+        (item) => {
+          resolveComponentSource(item.fiber, sourceMapCache, projectRoot)
+            .then((resolved) => {
+              showAskModal(askModal, item.componentName, async (instruction) => {
+                await runAskClaude({
+                  instruction,
+                  context: {
+                    componentName: item.componentName,
+                    fiber: item.fiber,
+                    element: capturedTarget,
+                    filePath: item.filePath,
+                    line: item.line,
+                  },
+                  resolved,
+                  screenshotEndpoint,
+                });
+                hideAskModal(askModal);
+              });
+            })
+            .catch(() => {
+              // Show modal even if source resolution fails
+              showAskModal(askModal, item.componentName, async (instruction) => {
+                await runAskClaude({
+                  instruction,
+                  context: {
+                    componentName: item.componentName,
+                    fiber: item.fiber,
+                    element: capturedTarget,
+                    filePath: item.filePath,
+                    line: item.line,
+                  },
+                  resolved: null,
+                  screenshotEndpoint,
+                });
+                hideAskModal(askModal);
+              });
+            });
+        },
+      );
 
       // Async: resolve file paths for each item and update display
       items.forEach((item, index) => {
@@ -363,11 +435,12 @@ export function Locator({
       window.removeEventListener('blur', handleBlur);
       removeOverlay(elements);
       removeContextMenu(contextMenu);
+      removeAskModal(askModal);
       if (previewPanel) removePreviewPanel(previewPanel);
       if (inspectDebounceTimer) clearTimeout(inspectDebounceTimer);
       document.body.style.cursor = '';
     };
-  }, [isEnabled, editor, projectRoot, modifier, highlightColor, showPreview]);
+  }, [isEnabled, editor, projectRoot, modifier, highlightColor, showPreview, screenshotEndpoint]);
 
   return null;
 }
