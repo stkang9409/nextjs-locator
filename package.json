@@ -1,6 +1,6 @@
 {
   "name": "nextjs-locator",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Alt+Click any React component to open its source in VS Code. Zero-config for Next.js with Turbopack.",
   "keywords": [
     "react",
@@ -52,7 +52,13 @@
     "clean": "rm -rf dist"
   },
   "peerDependencies": {
+    "next": ">=13.0.0",
     "react": ">=18.0.0"
+  },
+  "peerDependenciesMeta": {
+    "next": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/node": "^25.2.2",

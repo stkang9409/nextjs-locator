@@ -16,6 +16,7 @@ import {
   extractDataLocatorSource,
   collectComponentAncestry,
   collectVisibleChunkUrls,
+  getFiberBoundingRect,
 } from './lib/fiber';
 import {
   resolveSourceMap,
@@ -26,6 +27,7 @@ import { buildEditorUrl } from './lib/editor';
 import {
   createOverlay,
   positionOverlay,
+  positionOverlayByRect,
   hideOverlay,
   removeOverlay,
   updateTooltipText,
@@ -33,7 +35,6 @@ import {
 import {
   createContextMenu,
   showContextMenu,
-  updateContextMenuItem,
   hideContextMenu,
   removeContextMenu,
   isContextMenuVisible,
@@ -129,7 +130,6 @@ function LocatorImpl({
   enabled,
   highlightColor = '#ef4444',
   showPreview = true,
-  screenshotEndpoint,
 }: LocatorProps = {}) {
   const isEnabled = enabled ?? true;
 
@@ -265,52 +265,72 @@ function LocatorImpl({
 
       e.preventDefault();
       e.stopPropagation();
+      if (previewPanel) hidePreviewPanel(previewPanel);
 
-      const target = document.elementFromPoint(
-        e.clientX,
-        e.clientY,
-      ) as HTMLElement;
+      const target = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement;
       if (!target) return;
 
       const fiber = getFiberFromElement(target);
-      if (!fiber) {
-        console.warn('[nextjs-locator] Could not find React Fiber:', target);
-        return;
-      }
+      if (!fiber) return;
 
-      // Try the element's fiber first, then the nearest component fiber
-      let resolved = await resolveComponentSource(
-        fiber,
-        sourceMapCache,
-        projectRoot,
-        target,
-      );
-      if (!resolved) {
-        const componentFiber = findNearestComponentFiber(fiber);
-        if (componentFiber) {
-          resolved = await resolveComponentSource(
-            componentFiber,
-            sourceMapCache,
-            projectRoot,
-            target,
+      // Resolve the nearest user component for Alt+click (single component, Stage 2 직행)
+      const componentFiber = findNearestComponentFiber(fiber);
+      let resolved = await resolveComponentSource(fiber, sourceMapCache, projectRoot, target);
+      if (!resolved && componentFiber) {
+        resolved = await resolveComponentSource(componentFiber, sourceMapCache, projectRoot, target);
+      }
+      if (!resolved || resolved.filePath.includes('node_modules')) return;
+      if (!isModifierHeld) return;
+
+      // component fiber가 있으면 그걸 사용 (이름, props, hooks 추출용)
+      const inspectionFiber = componentFiber ?? fiber;
+      const componentName = getComponentName(inspectionFiber) ?? 'Unknown';
+      const item: ContextMenuItem = {
+        componentName,
+        fiber: inspectionFiber,
+        filePath: toRelativePath(resolved.filePath, projectRoot),
+        line: resolved.originalLine,
+      };
+
+      const capturedResolved = resolved;
+
+      showContextMenu(
+        contextMenu,
+        e.clientX,
+        e.clientY,
+        [item],
+        // onGoToCode
+        () => {
+          const url = buildEditorUrl(
+            editor,
+            capturedResolved.filePath,
+            capturedResolved.originalLine,
+            capturedResolved.originalColumn,
           );
-        }
-      }
-
-      if (resolved) {
-        const url = buildEditorUrl(
-          editor,
-          resolved.filePath,
-          resolved.originalLine,
-          resolved.originalColumn,
-        );
-        window.open(url, '_self');
-      } else {
-        console.warn('[nextjs-locator] Could not resolve source.');
-      }
+          window.open(url, '_self');
+        },
+        // onAskClaude
+        (menuItem) => {
+          showAskModal(askModal, menuItem.componentName, async (instruction) => {
+            await runAskClaude({
+              instruction,
+              context: {
+                componentName: menuItem.componentName,
+                fiber: menuItem.fiber,
+                element: target,
+                filePath: menuItem.filePath,
+                line: menuItem.line,
+              },
+              resolved: capturedResolved,
+            });
+            hideAskModal(askModal);
+          });
+        },
+        item, // skipToAction → Stage 2 직행
+      );
     };
 
-    const handleContextMenu = (e: MouseEvent) => {
+    const handleContextMenu = async (e: MouseEvent) => {
       if (!isModifierHeld) return;
 
       e.preventDefault();
@@ -329,92 +349,103 @@ function LocatorImpl({
       const ancestry = collectComponentAncestry(fiber);
       if (ancestry.length === 0) return;
 
-      // Build menu items
-      const items: ContextMenuItem[] = ancestry.map(({ fiber: f, name }) => ({
-        componentName: name,
-        fiber: f,
-      }));
+      // Resolve all sources in parallel — source maps are prefetched on modifier keydown
+      const resolvedEntries = await Promise.all(
+        ancestry.map(async ({ fiber: f, name }) => {
+          const resolved = await resolveComponentSource(
+            f,
+            sourceMapCache,
+            projectRoot,
+          ).catch(() => null);
+          return { fiber: f, name, resolved };
+        }),
+      );
 
-      // Capture target for "Ask Claude" closures
+      // Guard: user may have released modifier key while resolving
+      if (!isModifierHeld) return;
+
+      // Filter out node_modules (React 19 + Turbopack: filePath is the resolved source path)
+      const userEntries = resolvedEntries.filter(
+        ({ resolved }) => !resolved?.filePath.includes('node_modules'),
+      );
+
+      if (userEntries.length === 0) return;
+
       const capturedTarget = target;
 
-      // Show menu with names immediately
+      const items: ContextMenuItem[] = userEntries.map(
+        ({ fiber: f, name, resolved }) => ({
+          componentName: name,
+          fiber: f,
+          filePath: resolved
+            ? toRelativePath(resolved.filePath, projectRoot)
+            : undefined,
+          line: resolved?.originalLine,
+        }),
+      );
+
       showContextMenu(
         contextMenu,
         e.clientX,
         e.clientY,
         items,
-        // onGoToCode
+        // onGoToCode — reuse already-resolved source
         (item) => {
-          resolveComponentSource(item.fiber, sourceMapCache, projectRoot)
-            .then((resolved) => {
-              if (resolved) {
-                const url = buildEditorUrl(
-                  editor,
-                  resolved.filePath,
-                  resolved.originalLine,
-                  resolved.originalColumn,
-                );
-                window.open(url, '_self');
-              }
-            })
-            .catch((err) =>
-              console.warn('[nextjs-locator] Source map error:', err),
+          const ent = userEntries.find((en) => en.fiber === item.fiber);
+          if (ent?.resolved) {
+            const url = buildEditorUrl(
+              editor,
+              ent.resolved.filePath,
+              ent.resolved.originalLine,
+              ent.resolved.originalColumn,
             );
+            window.open(url, '_self');
+          } else {
+            resolveComponentSource(item.fiber, sourceMapCache, projectRoot)
+              .then((resolved) => {
+                if (resolved) {
+                  const url = buildEditorUrl(
+                    editor,
+                    resolved.filePath,
+                    resolved.originalLine,
+                    resolved.originalColumn,
+                            );
+                  window.open(url, '_self');
+                }
+              })
+              .catch((err) =>
+                console.warn('[nextjs-locator] Source map error:', err),
+              );
+          }
         },
-        // onAskClaude
+        // onAskClaude — reuse already-resolved source
         (item) => {
-          resolveComponentSource(item.fiber, sourceMapCache, projectRoot)
-            .then((resolved) => {
-              showAskModal(askModal, item.componentName, async (instruction) => {
-                await runAskClaude({
-                  instruction,
-                  context: {
-                    componentName: item.componentName,
-                    fiber: item.fiber,
-                    element: capturedTarget,
-                    filePath: item.filePath,
-                    line: item.line,
-                  },
-                  resolved,
-                  screenshotEndpoint,
-                });
-                hideAskModal(askModal);
-              });
-            })
-            .catch(() => {
-              // Show modal even if source resolution fails
-              showAskModal(askModal, item.componentName, async (instruction) => {
-                await runAskClaude({
-                  instruction,
-                  context: {
-                    componentName: item.componentName,
-                    fiber: item.fiber,
-                    element: capturedTarget,
-                    filePath: item.filePath,
-                    line: item.line,
-                  },
-                  resolved: null,
-                  screenshotEndpoint,
-                });
-                hideAskModal(askModal);
-              });
+          const ent = userEntries.find((en) => en.fiber === item.fiber);
+          const resolved = ent?.resolved ?? null;
+          showAskModal(askModal, item.componentName, async (instruction) => {
+            await runAskClaude({
+              instruction,
+              context: {
+                componentName: item.componentName,
+                fiber: item.fiber,
+                element: capturedTarget,
+                filePath: item.filePath,
+                line: item.line,
+              },
+              resolved,
             });
+            hideAskModal(askModal);
+          });
         },
+        undefined, // skipToAction
+        // onHover — 부모 항목 호버 시 오버레이 이동
+        (item) => {
+          const rect = getFiberBoundingRect(item.fiber);
+          if (rect) positionOverlayByRect(elements, rect, item.componentName);
+        },
+        // onLeave — 메뉴 밖으로 나가면 오버레이 숨김
+        () => { hideOverlay(elements); },
       );
-
-      // Async: resolve file paths for each item and update display
-      items.forEach((item, index) => {
-        resolveComponentSource(item.fiber, sourceMapCache, projectRoot)
-          .then((resolved) => {
-            if (resolved && isContextMenuVisible(contextMenu)) {
-              item.filePath = toRelativePath(resolved.filePath, projectRoot);
-              item.line = resolved.originalLine;
-              updateContextMenuItem(contextMenu, index, item);
-            }
-          })
-          .catch(() => {});
-      });
     };
 
     const handleBlur = () => {
@@ -448,7 +479,7 @@ function LocatorImpl({
       if (inspectDebounceTimer) clearTimeout(inspectDebounceTimer);
       document.body.style.cursor = '';
     };
-  }, [isEnabled, editor, projectRoot, modifier, highlightColor, showPreview, screenshotEndpoint]);
+  }, [isEnabled, editor, projectRoot, modifier, highlightColor, showPreview]);
 
   return null;
 }

@@ -13,14 +13,27 @@ export function extractDataLocatorSource(
   while (current && depth < 3) {
     const attr = current.getAttribute('data-locator-source');
     if (attr) {
-      // Format: "filepath:line:col" — parse from end to handle Windows colons
+      // Format: "filepath:line:col" or "filepath:line:col:endLine" — parse from end to handle Windows colons
       const parts = attr.split(':');
       if (parts.length >= 3) {
         const col = parseInt(parts[parts.length - 1], 10);
         const line = parseInt(parts[parts.length - 2], 10);
-        const filePath = parts.slice(0, -2).join(':');
+        const maybeEndLine =
+          parts.length >= 4
+            ? parseInt(parts[parts.length - 3], 10)
+            : undefined;
+        const hasEndLine =
+          maybeEndLine !== undefined && !isNaN(maybeEndLine);
+        const filePath = parts
+          .slice(0, hasEndLine ? -3 : -2)
+          .join(':');
         if (filePath && !isNaN(line) && !isNaN(col)) {
-          return { filePath, originalLine: line, originalColumn: col };
+          return {
+            filePath,
+            originalLine: line,
+            originalColumn: col,
+            endLine: hasEndLine ? maybeEndLine : undefined,
+          };
         }
       }
     }
@@ -119,6 +132,10 @@ export function extractDebugSource(fiber: any): ResolvedSource | null {
 /**
  * Returns true if the fiber's source originates from user code (not node_modules).
  * Falls back to true (include) when source info is unavailable.
+ *
+ * React 18: _debugSource.fileName is the actual source path — accurate.
+ * React 19 + Turbopack: _debugStack.stack has bundled chunk URLs (no node_modules in URL).
+ *   Post-resolution filtering is done in handleContextMenu (Locator.tsx) instead.
  */
 export function isUserComponent(fiber: any): boolean {
   // React 18: _debugSource.fileName is the original source path
@@ -127,32 +144,8 @@ export function isUserComponent(fiber: any): boolean {
     return !fileName.includes('node_modules');
   }
 
-  // React 19: _debugStack is an Error whose .stack has chunk URLs
-  const stack = fiber?._debugStack?.stack as string | undefined;
-  if (stack) {
-    for (const line of stack.split('\n')) {
-      if (!line.includes('at ')) continue;
-      // Skip React internals (same as extractStackFrame)
-      if (
-        line.includes('jsxDEV') ||
-        line.includes('react-stack-top-frame') ||
-        line.includes('react_stack_bottom_frame') ||
-        line.includes('react-dom') ||
-        line.includes('renderWithHooks') ||
-        line.includes('beginWork') ||
-        line.includes('performUnitOfWork')
-      ) continue;
-
-      // First meaningful frame — check if URL path has node_modules
-      const match = line.match(/\((https?:\/\/[^)]+?):(\d+):(\d+)\)/);
-      if (match) {
-        const url = match[1];
-        return !url.includes('node_modules');
-      }
-    }
-  }
-
-  // No source info → include by default
+  // React 19: can't determine from _debugStack URL alone (bundled chunks).
+  // Post-resolution filtering is done in handleContextMenu (Locator.tsx).
   return true;
 }
 
@@ -181,6 +174,34 @@ export function collectComponentAncestry(
   }
 
   return ancestors;
+}
+
+/**
+ * Collect all HostComponent (tag=5) DOM nodes rendered by a component fiber,
+ * including Fragment roots and sibling subtrees. Returns the union bounding rect.
+ */
+export function getFiberBoundingRect(fiber: any): DOMRect | null {
+  const nodes: HTMLElement[] = [];
+
+  function walk(node: any): void {
+    if (!node) return;
+    if (node.tag === 5 && node.stateNode instanceof HTMLElement) {
+      nodes.push(node.stateNode);
+    }
+    walk(node.child);
+    walk(node.sibling);
+  }
+
+  walk(fiber.child);
+
+  if (nodes.length === 0) return null;
+
+  const rects = nodes.map((n) => n.getBoundingClientRect());
+  const left = Math.min(...rects.map((r) => r.left));
+  const top = Math.min(...rects.map((r) => r.top));
+  const right = Math.max(...rects.map((r) => r.right));
+  const bottom = Math.max(...rects.map((r) => r.bottom));
+  return new DOMRect(left, top, right - left, bottom - top);
 }
 
 /**

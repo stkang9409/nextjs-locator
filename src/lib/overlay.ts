@@ -54,6 +54,29 @@ export function positionOverlay(
   }
 }
 
+/** Position the overlay and tooltip using a pre-computed DOMRect (e.g. union rect of a Fragment) */
+export function positionOverlayByRect(
+  elements: OverlayElements,
+  rect: DOMRect,
+  componentName: string | null,
+): void {
+  const { overlay, tooltip } = elements;
+  overlay.style.display = 'block';
+  overlay.style.left = `${rect.left}px`;
+  overlay.style.top = `${rect.top}px`;
+  overlay.style.width = `${rect.width}px`;
+  overlay.style.height = `${rect.height}px`;
+
+  if (componentName) {
+    tooltip.textContent = `<${componentName}>`;
+    tooltip.style.display = 'block';
+    tooltip.style.left = `${rect.left}px`;
+    tooltip.style.top = `${Math.max(0, rect.top - 28)}px`;
+  } else {
+    tooltip.style.display = 'none';
+  }
+}
+
 /** Hide overlay and tooltip */
 export function hideOverlay(elements: OverlayElements): void {
   elements.overlay.style.display = 'none';

@@ -32,11 +32,21 @@ export function showContextMenu(
   items: ContextMenuItem[],
   onGoToCode: (item: ContextMenuItem) => void,
   onAskClaude: (item: ContextMenuItem) => void,
+  skipToAction?: ContextMenuItem,
+  onHover?: (item: ContextMenuItem) => void,
+  onLeave?: () => void,
 ): void {
   const { container } = elements;
 
   // Position within viewport (set before rendering so we can measure)
   container.style.display = 'block';
+
+  // Hover overlay: hide when mouse leaves the menu container
+  const prevLeave = (container as any)._mouseleaveHandler;
+  if (prevLeave) container.removeEventListener('mouseleave', prevLeave);
+  const leaveHandler = () => onLeave?.();
+  container.addEventListener('mouseleave', leaveHandler);
+  (container as any)._mouseleaveHandler = leaveHandler;
 
   function setKeydownHandler(handler: (e: KeyboardEvent) => void) {
     const prev = (container as any)._keydownHandler;
@@ -89,6 +99,7 @@ export function showContextMenu(
         rows.forEach((r) => (r.style.background = ''));
         row.style.background = 'rgba(255,255,255,0.06)';
         focusedIndex = index;
+        onHover?.(item);
       });
       row.addEventListener('mouseleave', () => {
         row.style.background = '';
@@ -121,7 +132,7 @@ export function showContextMenu(
   }
 
   // ── Stage 2: Action picker ────────────────────────────────────────────────
-  function renderActionPicker(item: ContextMenuItem) {
+  function renderActionPicker(item: ContextMenuItem, hideOnBack = false) {
     container.innerHTML = '';
 
     // Header: back arrow + component name
@@ -143,7 +154,7 @@ export function showContextMenu(
     headerName.style.cssText = 'color: #93c5fd; font-size: 13px;';
     header.appendChild(headerName);
 
-    header.addEventListener('click', () => renderList());
+    header.addEventListener('click', () => hideOnBack ? hideContextMenu(elements) : renderList());
     header.addEventListener('mouseenter', () => {
       header.style.background = 'rgba(255,255,255,0.04)';
     });
@@ -251,15 +262,19 @@ export function showContextMenu(
         e.preventDefault();
         actionRows[focusedIndex].click();
       } else if (e.key === 'Escape') {
-        renderList();
+        hideOnBack ? hideContextMenu(elements) : renderList();
       }
     });
 
     container.focus();
   }
 
-  // Render first stage
-  renderList();
+  // Render first stage (or skip to action picker if skipToAction is provided)
+  if (skipToAction) {
+    renderActionPicker(skipToAction, true);
+  } else {
+    renderList();
+  }
 
   // Position within viewport
   const menuWidth = container.offsetWidth || 340;
@@ -304,6 +319,11 @@ export function hideContextMenu(elements: ContextMenuElements): void {
   if (handler) {
     elements.container.removeEventListener('keydown', handler);
     delete (elements.container as any)._keydownHandler;
+  }
+  const leaveHandler = (elements.container as any)._mouseleaveHandler;
+  if (leaveHandler) {
+    elements.container.removeEventListener('mouseleave', leaveHandler);
+    delete (elements.container as any)._mouseleaveHandler;
   }
 }
 

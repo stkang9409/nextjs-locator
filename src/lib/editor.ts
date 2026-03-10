@@ -11,6 +11,9 @@ const EDITOR_PROTOCOLS: Record<EditorProtocol, string> = {
 /**
  * Build a URL that opens the given file at line:column in the target editor.
  *
+ * Note: vscode://file/ protocol does not support range selection.
+ * Range selection requires a companion VS Code extension (future work).
+ *
  * Examples:
  * - vscode:    vscode://file/path/to/file.tsx:42:10
  * - webstorm:  webstorm://open?file=/path/to/file.tsx&line=42&column=10

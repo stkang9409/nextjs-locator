@@ -19,8 +19,6 @@ export interface LocatorProps {
   highlightColor?: string;
   /** Show props/state preview panel on Alt+hover. Default: true */
   showPreview?: boolean;
-  /** API endpoint for saving DOM screenshots. If provided, enables screenshot capture in Claude prompt. */
-  screenshotEndpoint?: string;
 }
 
 /** Context passed to the "Ask Claude" workflow */
@@ -48,6 +46,7 @@ export interface SourceMapSection {
     sources: string[];
     mappings: string;
     names?: string[];
+    sourcesContent?: string[];
   };
 }
 
@@ -58,6 +57,7 @@ export interface ResolvedSource {
   filePath: string;
   originalLine: number;
   originalColumn: number;
+  endLine?: number;
 }
 
 /** Decoded original position from VLQ mappings */

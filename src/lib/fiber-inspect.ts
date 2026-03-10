@@ -10,15 +10,6 @@ import type {
 /** Render count tracker — resets naturally when fibers are GC'd on unmount */
 const renderCountMap = new WeakMap<object, number>();
 
-/** Stateful hook types worth displaying to the user */
-const STATEFUL_HOOKS = new Set([
-  'useState',
-  'useReducer',
-  'useMemo',
-  'useRef',
-  'useContext',
-]);
-
 /** Effect hook types that should be summarized, not shown raw */
 const EFFECT_HOOKS = new Set([
   'useEffect',
@@ -40,16 +31,22 @@ function isEffectNode(state: any): boolean {
 /** Infer hook type from memoizedState structure when _debugHookTypes unavailable */
 function inferHookType(node: any): string {
   const ms = node.memoizedState;
+  // 1. Effect descriptor — {tag, create, deps}
   if (isEffectNode(ms)) return 'useEffect';
+  // 2. useRef — {current: ...} with no extra keys (check before queue!)
+  if (ms != null && typeof ms === 'object' && 'current' in ms
+      && Object.keys(ms).length <= 2) return 'useRef';
+  // 3. useMemo — [value, deps] tuple
+  if (Array.isArray(ms) && ms.length === 2 && Array.isArray(ms[1])) return 'useMemo';
+  // 4. useState/useReducer — queue present
   if (node.queue != null) return 'useState';
-  if (ms != null && typeof ms === 'object' && 'current' in ms) return 'useRef';
   return 'unknown';
 }
 
-const MAX_STRING_LEN = 50;
-const MAX_OBJECT_KEYS = 3;
+const MAX_STRING_LEN = 80;
+const MAX_OBJECT_KEYS = 5;
 const MAX_ARRAY_ITEMS = 3;
-const MAX_DEPTH = 2;
+const MAX_DEPTH = 3;
 
 /**
  * Safely serialize any JS value for display in the preview panel.
@@ -165,36 +162,82 @@ export function extractProps(fiber: any, limit: number = 10): PropEntry[] {
   }
 }
 
+/** Hook types that represent direct component state (high priority) */
+const PRIMARY_HOOKS = new Set(['useState', 'useReducer', 'useRef']);
+
+/** Hook types that represent derived/external state (low priority) */
+const SECONDARY_HOOKS = new Set(['useMemo', 'useContext']);
+
+/**
+ * Check if a value looks like a library-internal descriptor
+ * (e.g., effect descriptors, React Query internals) rather than user data.
+ * Applied to all hook types, not just useContext.
+ */
+function isLibraryInternalValue(value: any): boolean {
+  if (value == null || typeof value !== 'object') return false;
+  // Effect descriptor shape: {tag, create, deps}
+  if (isEffectNode(value)) return true;
+  // React Query / library internals with subscribe + listeners
+  if ('subscribe' in value && 'listeners' in value) return true;
+  return false;
+}
+
+/**
+ * Extract the state value from a hook node based on its type.
+ */
+function extractHookValue(hookType: string, node: any): any {
+  if (hookType === 'useRef') {
+    return node.memoizedState?.current;
+  }
+  if (hookType === 'useState' || hookType === 'useReducer') {
+    return node.queue?.lastRenderedState ?? node.memoizedState;
+  }
+  if (hookType === 'useMemo') {
+    return Array.isArray(node.memoizedState)
+      ? node.memoizedState[0]
+      : node.memoizedState;
+  }
+  return node.memoizedState;
+}
+
+interface RawHook {
+  index: number;
+  hookType: string;
+  node: any;
+}
+
 /**
  * Walk fiber.memoizedState linked list to extract hook state.
- * Uses fiber._debugHookTypes for type labels (dev mode only).
- * Filters out effect hooks' raw descriptors and infers types when debug info unavailable.
+ * Uses a 2-pass approach: primary hooks (useState, useReducer, useRef) first,
+ * then secondary hooks (useMemo, useContext) to fill remaining slots.
+ * Filters out library-internal useContext values.
  */
 export function extractHookState(
   fiber: any,
-  limit: number = 5,
+  limit: number = 8,
 ): HookEntry[] {
   try {
     if (fiber?.tag !== 0) return []; // Function components only
 
     const hookTypes: string[] | undefined = fiber._debugHookTypes;
-    const entries: HookEntry[] = [];
+    const primary: RawHook[] = [];
+    const secondary: RawHook[] = [];
+    const effects: HookEntry[] = [];
     let node = fiber.memoizedState;
     let index = 0;
 
-    while (node && entries.length < limit) {
+    // Single walk: categorize all hooks
+    while (node) {
       let hookType: string;
-      let include = false;
 
       if (hookTypes) {
         hookType = hookTypes[index] ?? `Hook [${index}]`;
-        include = STATEFUL_HOOKS.has(hookType);
 
-        // Show effect hooks with a concise summary instead of raw descriptor
+        // Summarize effect hooks
         if (EFFECT_HOOKS.has(hookType)) {
           const deps = node.memoizedState?.deps;
           const depsCount = Array.isArray(deps) ? deps.length : '?';
-          entries.push({
+          effects.push({
             index,
             hookType,
             value: { display: `deps[${depsCount}]`, type: 'other' },
@@ -204,38 +247,56 @@ export function extractHookState(
           continue;
         }
       } else {
-        // No debug hook types — infer from structure
         hookType = inferHookType(node);
-        // Skip effect hooks and unknown hooks
-        include = hookType !== 'useEffect' && hookType !== 'unknown';
+        if (hookType === 'useEffect' || hookType === 'unknown') {
+          node = node.next;
+          index++;
+          continue;
+        }
       }
 
-      if (include) {
-        let stateValue: any;
+      // Filter out library-internal values regardless of hook type
+      const stateValue = extractHookValue(hookType, node);
+      if (isLibraryInternalValue(stateValue)) {
+        node = node.next;
+        index++;
+        continue;
+      }
 
-        if (hookType === 'useRef') {
-          stateValue = node.memoizedState?.current;
-        } else if (hookType === 'useState' || hookType === 'useReducer') {
-          stateValue =
-            node.queue?.lastRenderedState ?? node.memoizedState;
-        } else if (hookType === 'useMemo') {
-          // useMemo stores [value, deps] in memoizedState
-          stateValue = Array.isArray(node.memoizedState)
-            ? node.memoizedState[0]
-            : node.memoizedState;
-        } else {
-          stateValue = node.memoizedState;
-        }
-
-        entries.push({
-          index,
-          hookType,
-          value: safeSerialize(stateValue),
-        });
+      if (PRIMARY_HOOKS.has(hookType)) {
+        primary.push({ index, hookType, node });
+      } else if (SECONDARY_HOOKS.has(hookType)) {
+        secondary.push({ index, hookType, node });
       }
 
       node = node.next;
       index++;
+    }
+
+    // 2-pass assembly: primary first, then secondary, then effects
+    const entries: HookEntry[] = [];
+
+    for (const hook of primary) {
+      if (entries.length >= limit) break;
+      entries.push({
+        index: hook.index,
+        hookType: hook.hookType,
+        value: safeSerialize(extractHookValue(hook.hookType, hook.node)),
+      });
+    }
+
+    for (const hook of secondary) {
+      if (entries.length >= limit) break;
+      entries.push({
+        index: hook.index,
+        hookType: hook.hookType,
+        value: safeSerialize(extractHookValue(hook.hookType, hook.node)),
+      });
+    }
+
+    for (const effect of effects) {
+      if (entries.length >= limit) break;
+      entries.push(effect);
     }
 
     return entries;

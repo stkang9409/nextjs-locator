@@ -15,7 +15,8 @@ https://github.com/user-attachments/assets/4aa73a8c-ff03-4017-8950-14b70417cea2
 - **Webpack compatible** — Also works with Next.js webpack builds
 - **File path tooltip** — Shows resolved source file path and line on hover
 - **Props/State preview** — Hover shows component props, hook state, and render count
-- **Component hierarchy** — Right-click to see the full React component ancestry
+- **Component hierarchy** — Right-click to see the full React component ancestry with overlay highlight
+- **Claude Code integration** — "Ask Claude" action sends component context (props, state, DOM, CSS) to Claude Code
 - **Source map prefetch** — Prefetches source maps on modifier key press for instant resolution
 - **Compile-time fast path** — Optional `nextjs-locator-swc` companion for instant resolution via build-time attributes
 - **Multi-editor** — VS Code, Cursor, WebStorm, Zed, VS Code Insiders
@@ -34,7 +35,9 @@ https://github.com/user-attachments/assets/4aa73a8c-ff03-4017-8950-14b70417cea2
 4. **Prefetches `.map` source maps** when modifier key is pressed (Turbopack sections format)
 5. **Decodes VLQ mappings** to resolve the original file path, line, and column
 6. Displays **file path in tooltip** and **props/state preview panel**
-7. Opens `vscode://file/path:line:column` (or your editor's protocol)
+7. **Alt+Click** opens action picker: **go to source** or **ask Claude**
+8. **Alt+Right-click** shows component hierarchy with hover overlay highlighting
+9. "Ask Claude" collects component context and opens **Claude Code** via `vscode://` protocol
 
 ## Installation
 
@@ -88,11 +91,11 @@ export default function App({ Component, pageProps }: AppProps) {
 | Shortcut | Action |
 |----------|--------|
 | **Alt + Hover** | Highlight component with name and source file path |
-| **Alt + Click** | Open component source in editor |
-| **Alt + Right-click** | Show component hierarchy menu |
-| **Arrow Up/Down** | Navigate hierarchy menu |
-| **Enter** | Open selected component source |
-| **Escape** | Dismiss hierarchy menu |
+| **Alt + Click** | Open action picker (go to source / ask Claude) |
+| **Alt + Right-click** | Show component hierarchy menu with overlay highlight |
+| **Arrow Up/Down** | Navigate menu items |
+| **Enter** | Select action |
+| **Escape** | Dismiss menu |
 
 > On Mac, use **Option** instead of Alt.
 
@@ -105,7 +108,7 @@ export default function App({ Component, pageProps }: AppProps) {
 | `highlightColor` | `string` | `'#ef4444'` | CSS color for the overlay border |
 | `projectRoot` | `string` | — | Absolute project root path |
 | `enabled` | `boolean` | `true` in dev | Force enable/disable |
-| `showPreview` | `boolean` | `true` | Show props/state preview panel on hover |
+| `showPreview` | `boolean` | `true` | Show props/state preview on hover |
 
 ### Editor Support
 
@@ -153,6 +156,17 @@ NEXT_PUBLIC_PROJECT_ROOT=/Users/you/projects/my-app
 <Locator highlightColor="#10b981" />   {/* Green */}
 ```
 
+## Claude Code Integration
+
+**Alt+Click** any component to open the action picker, then select **"Claude에게 묻기"** (Ask Claude). A modal appears where you can type your instruction (e.g., "change this button to blue"). The prompt sent to Claude Code includes:
+
+- Component name, file path, and line number
+- Current props and hook state (useState, useReducer, useRef, useMemo)
+- Rendered DOM HTML structure
+- Key computed CSS properties
+
+This opens Claude Code in VS Code with the full component context pre-filled, so Claude can make targeted edits to the right file.
+
 ## Comparison with Alternatives
 
 | Feature | nextjs-locator | click-to-react-component | LocatorJS | react-dev-inspector |
@@ -164,6 +178,7 @@ NEXT_PUBLIC_PROJECT_ROOT=/Users/you/projects/my-app
 | File path tooltip | Yes | No | No | No |
 | Props/State preview | Yes | No | No | No |
 | Component hierarchy | Yes (right-click) | Yes | No | No |
+| Claude Code integration | Yes | No | No | No |
 | Source map prefetch | Yes | N/A | N/A | N/A |
 | Compile-time fast path | Yes (optional) | N/A | N/A | N/A |
 | Dependencies | 0 | Small | Extension | Plugin |
