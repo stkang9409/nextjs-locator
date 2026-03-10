@@ -1,6 +1,10 @@
 import { defineConfig } from 'tsup';
 import { readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+const { version } = require('./package.json');
 
 const USE_CLIENT_BANNER = '"use client";\n';
 
@@ -14,6 +18,9 @@ export default defineConfig({
   splitting: false,
   treeshake: true,
   external: ['react'],
+  define: {
+    __VERSION__: JSON.stringify(version),
+  },
   onSuccess: async () => {
     // Prepend "use client" directive to output files
     const files = ['dist/index.js', 'dist/index.cjs'];

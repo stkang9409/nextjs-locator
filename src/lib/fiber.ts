@@ -114,8 +114,49 @@ export function extractDebugSource(fiber: any): ResolvedSource | null {
 }
 
 /**
+ * Returns true if the fiber's source originates from user code (not node_modules).
+ * Falls back to true (include) when source info is unavailable.
+ */
+export function isUserComponent(fiber: any): boolean {
+  // React 18: _debugSource.fileName is the original source path
+  const fileName = fiber?._debugSource?.fileName as string | undefined;
+  if (fileName) {
+    return !fileName.includes('node_modules');
+  }
+
+  // React 19: _debugStack is an Error whose .stack has chunk URLs
+  const stack = fiber?._debugStack?.stack as string | undefined;
+  if (stack) {
+    for (const line of stack.split('\n')) {
+      if (!line.includes('at ')) continue;
+      // Skip React internals (same as extractStackFrame)
+      if (
+        line.includes('jsxDEV') ||
+        line.includes('react-stack-top-frame') ||
+        line.includes('react_stack_bottom_frame') ||
+        line.includes('react-dom') ||
+        line.includes('renderWithHooks') ||
+        line.includes('beginWork') ||
+        line.includes('performUnitOfWork')
+      ) continue;
+
+      // First meaningful frame — check if URL path has node_modules
+      const match = line.match(/\((https?:\/\/[^)]+?):(\d+):(\d+)\)/);
+      if (match) {
+        const url = match[1];
+        return !url.includes('node_modules');
+      }
+    }
+  }
+
+  // No source info → include by default
+  return true;
+}
+
+/**
  * Walk up the Fiber tree collecting ALL component ancestors.
  * Returns array from innermost (closest to element) to outermost (root).
+ * Only includes user-defined components (filters out node_modules).
  */
 export function collectComponentAncestry(
   fiber: any,
@@ -128,7 +169,7 @@ export function collectComponentAncestry(
   while (current && depth < maxDepth) {
     if (current.tag === 0 || current.tag === 1) {
       const name = getComponentName(current);
-      if (name) {
+      if (name && isUserComponent(current)) {
         ancestors.push({ fiber: current, name });
       }
     }

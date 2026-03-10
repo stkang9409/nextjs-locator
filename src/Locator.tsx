@@ -106,7 +106,13 @@ async function resolveComponentSource(
  * Renders nothing (returns null). Only active in development mode.
  * Completely tree-shaken in production builds.
  */
-export function Locator({
+export function Locator(props: LocatorProps = {}) {
+  if (process.env.NODE_ENV !== 'development' && props.enabled !== true)
+    return null;
+  return <LocatorImpl {...props} />;
+}
+
+function LocatorImpl({
   editor = 'vscode',
   projectRoot,
   modifier = 'alt',
@@ -114,10 +120,12 @@ export function Locator({
   highlightColor = '#ef4444',
   showPreview = true,
 }: LocatorProps = {}) {
-  const isEnabled = enabled ?? process.env.NODE_ENV === 'development';
+  const isEnabled = enabled ?? true;
 
   useEffect(() => {
     if (!isEnabled) return;
+
+    console.log('[nextjs-locator] v' + __VERSION__ + ' initialized');
 
     const sourceMapCache = new Map<string, SourceMapSections>();
     const elements = createOverlay(highlightColor);
