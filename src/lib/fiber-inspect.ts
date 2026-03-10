@@ -16,7 +16,35 @@ const STATEFUL_HOOKS = new Set([
   'useReducer',
   'useMemo',
   'useRef',
+  'useContext',
 ]);
+
+/** Effect hook types that should be summarized, not shown raw */
+const EFFECT_HOOKS = new Set([
+  'useEffect',
+  'useLayoutEffect',
+  'useInsertionEffect',
+]);
+
+/** Detect if a memoizedState node looks like an effect descriptor */
+function isEffectNode(state: any): boolean {
+  return (
+    state != null &&
+    typeof state === 'object' &&
+    'create' in state &&
+    'deps' in state &&
+    'tag' in state
+  );
+}
+
+/** Infer hook type from memoizedState structure when _debugHookTypes unavailable */
+function inferHookType(node: any): string {
+  const ms = node.memoizedState;
+  if (isEffectNode(ms)) return 'useEffect';
+  if (node.queue != null) return 'useState';
+  if (ms != null && typeof ms === 'object' && 'current' in ms) return 'useRef';
+  return 'unknown';
+}
 
 const MAX_STRING_LEN = 50;
 const MAX_OBJECT_KEYS = 3;
@@ -140,7 +168,7 @@ export function extractProps(fiber: any, limit: number = 10): PropEntry[] {
 /**
  * Walk fiber.memoizedState linked list to extract hook state.
  * Uses fiber._debugHookTypes for type labels (dev mode only).
- * Only returns stateful hooks: useState, useReducer, useMemo, useRef.
+ * Filters out effect hooks' raw descriptors and infers types when debug info unavailable.
  */
 export function extractHookState(
   fiber: any,
@@ -155,17 +183,46 @@ export function extractHookState(
     let index = 0;
 
     while (node && entries.length < limit) {
-      const hookType = hookTypes?.[index] ?? `Hook [${index}]`;
+      let hookType: string;
+      let include = false;
 
-      if (STATEFUL_HOOKS.has(hookType) || !hookTypes) {
+      if (hookTypes) {
+        hookType = hookTypes[index] ?? `Hook [${index}]`;
+        include = STATEFUL_HOOKS.has(hookType);
+
+        // Show effect hooks with a concise summary instead of raw descriptor
+        if (EFFECT_HOOKS.has(hookType)) {
+          const deps = node.memoizedState?.deps;
+          const depsCount = Array.isArray(deps) ? deps.length : '?';
+          entries.push({
+            index,
+            hookType,
+            value: { display: `deps[${depsCount}]`, type: 'other' },
+          });
+          node = node.next;
+          index++;
+          continue;
+        }
+      } else {
+        // No debug hook types — infer from structure
+        hookType = inferHookType(node);
+        // Skip effect hooks and unknown hooks
+        include = hookType !== 'useEffect' && hookType !== 'unknown';
+      }
+
+      if (include) {
         let stateValue: any;
 
         if (hookType === 'useRef') {
           stateValue = node.memoizedState?.current;
         } else if (hookType === 'useState' || hookType === 'useReducer') {
-          // React stores useState state in queue.lastRenderedState or memoizedState
           stateValue =
             node.queue?.lastRenderedState ?? node.memoizedState;
+        } else if (hookType === 'useMemo') {
+          // useMemo stores [value, deps] in memoizedState
+          stateValue = Array.isArray(node.memoizedState)
+            ? node.memoizedState[0]
+            : node.memoizedState;
         } else {
           stateValue = node.memoizedState;
         }

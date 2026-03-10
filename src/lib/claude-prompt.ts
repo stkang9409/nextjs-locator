@@ -17,7 +17,35 @@ const CSS_PROPS = [
   'cursor', 'pointerEvents',
 ] as const;
 
-/** Capture a DOM element as a PNG blob using the SVG foreignObject technique */
+/**
+ * Inline all computed styles onto a cloned element tree.
+ * This ensures SVG foreignObject rendering doesn't depend on external stylesheets.
+ */
+function inlineAllStyles(original: HTMLElement, clone: HTMLElement): void {
+  const computed = window.getComputedStyle(original);
+  clone.style.cssText = computed.cssText;
+
+  const origChildren = original.querySelectorAll('*');
+  const cloneChildren = clone.querySelectorAll('*');
+  for (let i = 0; i < origChildren.length && i < cloneChildren.length; i++) {
+    const origChild = origChildren[i] as HTMLElement;
+    const cloneChild = cloneChildren[i] as HTMLElement;
+    if (cloneChild.style) {
+      const cs = window.getComputedStyle(origChild);
+      cloneChild.style.cssText = cs.cssText;
+    }
+  }
+
+  // Replace <img> elements with placeholders to avoid CORS errors
+  const cloneImgs = clone.querySelectorAll('img');
+  for (const img of cloneImgs) {
+    img.removeAttribute('src');
+    img.removeAttribute('srcset');
+    img.style.backgroundColor = '#e0e0e0';
+  }
+}
+
+/** Capture a DOM element as a PNG blob using SVG foreignObject with inlined styles */
 export async function captureElementScreenshot(
   element: HTMLElement,
 ): Promise<Blob | null> {
@@ -32,10 +60,18 @@ export async function captureElementScreenshot(
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
 
-    const html = element.outerHTML;
+    // Clone and inline all styles to avoid external dependency issues
+    const clone = element.cloneNode(true) as HTMLElement;
+    inlineAllStyles(element, clone);
+
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = `width:${rect.width}px;height:${rect.height}px;overflow:hidden;`;
+    wrapper.appendChild(clone);
+
+    const html = new XMLSerializer().serializeToString(wrapper);
     const svgData = `<svg xmlns="http://www.w3.org/2000/svg" width="${rect.width}" height="${rect.height}">
       <foreignObject width="100%" height="100%">
-        <div xmlns="http://www.w3.org/1999/xhtml">${html}</div>
+        ${html}
       </foreignObject>
     </svg>`;
 
@@ -52,11 +88,13 @@ export async function captureElementScreenshot(
       };
       img.onerror = () => {
         URL.revokeObjectURL(url);
+        console.warn('[nextjs-locator] Screenshot capture failed: SVG foreignObject rendering error');
         resolve(null);
       };
       img.src = url;
     });
-  } catch {
+  } catch (err) {
+    console.warn('[nextjs-locator] Screenshot capture failed:', err);
     return null;
   }
 }
@@ -135,8 +173,19 @@ function serializeInspection(inspection: FiberInspection): {
     stateJson = JSON.stringify(obj, null, 2);
   } else if (!inspection.isClassComponent && inspection.hooks.length > 0) {
     const obj: Record<string, string> = {};
+    // Count occurrences of each hook type for numbering (useState#0, useState#1, ...)
+    const typeCounts: Record<string, number> = {};
     for (const h of inspection.hooks) {
-      const key = h.hookType === 'useState' ? `state[${h.index}]` : `${h.hookType}[${h.index}]`;
+      const count = typeCounts[h.hookType] ?? 0;
+      typeCounts[h.hookType] = count + 1;
+    }
+    const typeIndices: Record<string, number> = {};
+    for (const h of inspection.hooks) {
+      const idx = typeIndices[h.hookType] ?? 0;
+      typeIndices[h.hookType] = idx + 1;
+      const key = (typeCounts[h.hookType] ?? 0) > 1
+        ? `${h.hookType}#${idx}`
+        : h.hookType;
       obj[key] = h.value.display;
     }
     stateJson = JSON.stringify(obj, null, 2);
@@ -218,6 +267,8 @@ export async function runAskClaude(params: {
     const blob = await captureElementScreenshot(context.element);
     if (blob) {
       screenshotPath = await uploadScreenshot(blob, screenshotEndpoint);
+    } else {
+      console.warn('[nextjs-locator] Screenshot capture returned null — CORS or security restrictions may apply');
     }
   }
 
