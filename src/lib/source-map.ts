@@ -1,6 +1,11 @@
 import type { SourceMapSections, ResolvedSource } from '../types';
 import { decodeOriginalPosition } from './vlq';
 
+/** Check if a path is inside node_modules */
+export function isNodeModulesPath(path: string): boolean {
+  return path.includes('/node_modules/') || path.startsWith('node_modules/');
+}
+
 /**
  * Prefetch a source map into the cache without resolving a specific position.
  * Non-blocking, best-effort. Returns immediately if already cached.
@@ -98,6 +103,9 @@ export async function resolveSourceMap(
     sectionRelativeLine,
     generatedColumn,
   );
+
+  // Filter out node_modules paths — these are not user-land source files
+  if (isNodeModulesPath(filePath)) return null;
 
   return {
     filePath,

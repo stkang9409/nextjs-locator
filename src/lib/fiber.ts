@@ -71,7 +71,7 @@ export function extractStackFrame(debugStack: any): StackFrame | null {
   for (const line of lines) {
     if (!line.includes('at ')) continue;
 
-    // Skip React internal frames
+    // Skip React internal frames and node_modules
     if (
       line.includes('jsxDEV') ||
       line.includes('react-stack-top-frame') ||
@@ -79,7 +79,10 @@ export function extractStackFrame(debugStack: any): StackFrame | null {
       line.includes('react-dom') ||
       line.includes('renderWithHooks') ||
       line.includes('beginWork') ||
-      line.includes('performUnitOfWork')
+      line.includes('performUnitOfWork') ||
+      line.includes('node_modules') ||
+      line.includes('react-server-dom-turbopack') ||
+      line.includes('react-server-dom-webpack')
     ) {
       continue;
     }
