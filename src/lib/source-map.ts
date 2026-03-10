@@ -107,11 +107,48 @@ export async function resolveSourceMap(
   // Filter out node_modules paths — these are not user-land source files
   if (isNodeModulesPath(filePath)) return null;
 
+  const originalLine = originalPos?.originalLine ?? 1;
+  const sourceContent = matchedSection.map.sourcesContent?.[0];
+  const endLine = sourceContent
+    ? findComponentEndLine(sourceContent, originalLine)
+    : undefined;
+
   return {
     filePath,
-    originalLine: originalPos?.originalLine ?? 1,
+    originalLine,
     originalColumn: originalPos?.originalColumn ?? 0,
+    endLine,
   };
+}
+
+/**
+ * Given source file content and a start line (1-indexed),
+ * find the end line of the component/function body via brace counting.
+ * Returns undefined as fallback if no balanced brace found.
+ */
+function findComponentEndLine(
+  content: string,
+  startLine: number,
+): number | undefined {
+  const lines = content.split('\n');
+  let depth = 0;
+  let found = false;
+
+  for (
+    let i = startLine - 1;
+    i < Math.min(lines.length, startLine + 500);
+    i++
+  ) {
+    for (const ch of lines[i]) {
+      if (ch === '{') {
+        depth++;
+        found = true;
+      }
+      if (ch === '}') depth--;
+      if (found && depth === 0) return i + 1; // 1-indexed
+    }
+  }
+  return undefined;
 }
 
 /**
